@@ -1,6 +1,8 @@
 #include <csignal>
 #include <getopt.h>
+#include <iostream>
 #include <libevdev-1.0/libevdev/libevdev.h>
+#include <libusb-1.0/libusb.h>
 #include <log4cpp/OstreamAppender.hh>
 #include <memory>
 
@@ -13,11 +15,18 @@
 
 using namespace G13;
 
-int main(const int argc, char* argv[]) {
-    running = true;
-    class_id = LIBUSB_HOTPLUG_MATCH_ANY;
-    usb_context = nullptr;
+// definitions
+libusb_context* G13::usb_context = nullptr;
+std::vector<G13_Device*> G13::g13s = {};
+libusb_hotplug_callback_handle G13::usb_hotplug_cb_handle[3] = {};
+libusb_device** G13::devs = nullptr;
+std::string G13::logoFilename;
+const int G13::class_id = LIBUSB_HOTPLUG_MATCH_ANY;
 
+// *************************************************************************
+// ***************************** Entry point *******************************
+// *************************************************************************
+int main(const int argc, char* argv[]) {
     InitKeynames();
 
     start_logging();
@@ -37,6 +46,7 @@ int main(const int argc, char* argv[]) {
             {"help", no_argument, nullptr, 'h'},
             {nullptr, no_argument, nullptr, 0}
         };
+
     while (true) {
         const auto short_opts = "l:c:i:o:u:d:h";
         const auto opt = getopt_long(argc, argv, short_opts, long_opts, nullptr);
@@ -96,8 +106,6 @@ void G13::printHelp() {
     exit(1);
 }
 
-//Old G13_Manager Code
-
 void G13::Cleanup() {
     G13_OUT("Cleaning up");
     for (const auto this_handle : usb_hotplug_cb_handle) {
@@ -145,6 +153,10 @@ void G13::InitKeynames() {
             G13_DBG("mapping " << name << " " << keyname << "=" << code);
         }
     }
+}
+
+LINUX_KEY_VALUE G13::InputKeyMax() {
+    return input_key_max;
 }
 
 void G13::SignalHandler(const int signal) {
@@ -239,10 +251,17 @@ void G13::DisplayKeys() {
     G13_OUT(Helper::map_keys_out(input_name_to_key));
 }
 
+void G13::setLogoFilename(const std::string& newLogoFilename) {
+    logoFilename = newLogoFilename;
+}
+
 int G13::Run() {
+    running = true;
+
     DisplayKeys();
 
     int error = libusb_init(&usb_context);
+
     if (error != LIBUSB_SUCCESS) {
         G13_ERR("libusb initialization error: " << G13_Device::DescribeLibusbErrorCode(error));
         Cleanup();
@@ -314,8 +333,5 @@ int G13::Run() {
     Cleanup();
     G13_OUT("Exit");
     return EXIT_SUCCESS;
-}
 
-void G13::setLogoFilename(const std::string& newLogoFilename) {
-    logoFilename = newLogoFilename;
-}
+} // namespace G13
